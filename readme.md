@@ -78,4 +78,3 @@ After uncommenting, run the script again to delete all resources.
 
 ## License
 This project is licensed under the MIT License.
-
