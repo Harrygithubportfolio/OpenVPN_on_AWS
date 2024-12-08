@@ -1,12 +1,13 @@
 {
-    "vpc_id": "vpc-09232ee3055217409",
-    "igw_id": "igw-03df41cefb7ab6d1b",
-    "public_subnet_id": "subnet-0d21de05a281059fb",
-    "private_subnet_id": "subnet-0f24ebd4dcfc36f7f",
-    "route_table_id": "rtb-04969d12191f07aef",
-    "sg_id": "sg-0136ec327a80070bf",
-    "key_name": "vpn_key_pair",
-    "instance_id": "i-00ec8b1846068d564",
-    "allocation_id": "eipalloc-03f5a8eca3fde7523",
-    "elastic_ip": "35.176.235.197"
+    "vpc_id": "vpc-0e6cf25825c512674",
+    "subnets": [
+        "subnet-031a2be929df31450",
+        "subnet-07c3505ac1815d259"
+    ],
+    "internet_gateway_id": "igw-0475edcffe66f5aa2",
+    "route_table_id": "rtb-065a711f66693248c",
+    "security_group_id": "sg-0e70b0452b90a14f5",
+    "key_pair_name": "vpn",
+    "instance_id": "i-0f0aedb02200d631e",
+    "elastic_ip": "35.177.33.236"
 }
