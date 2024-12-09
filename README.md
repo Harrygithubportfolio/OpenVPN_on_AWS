@@ -69,3 +69,12 @@ Ensure .pem and .json files are excluded from version control (.gitignore is con
 Avoid exposing sensitive data (e.g., AWS keys, private keys) in the repository.
 Contributions
 Contributions are welcome! Feel free to open an issue or submit a pull request.
+
+**Disclaimer**
+This repository is provided as-is, and the scripts included are intended for educational and informational purposes only. By using this repository, you acknowledge and agree to the following:
+
+Use at Your Own Risk: The scripts in this repository interact with AWS services and may create resources that incur costs. It is your responsibility to understand the AWS Free Tier limits and pricing before using these scripts.
+No Guarantees: I make no guarantees about the functionality, accuracy, or completeness of the scripts. They are provided as a reference and may require adjustments to fit your specific needs.
+No Liability: I am not responsible for any charges, fees, or costs incurred by using this repository. This includes, but is not limited to, charges for AWS services or related infrastructure.
+Usage and Security: It is your responsibility to properly secure any resources created using these scripts, including managing credentials and protecting sensitive information.
+By using this repository, you agree to hold me harmless from any claims, liabilities, or expenses arising from the use of these scripts.
