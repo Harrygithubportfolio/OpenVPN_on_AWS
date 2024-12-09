@@ -2,6 +2,7 @@ import boto3
 import os
 import time
 import json
+import zipfile
 
 resources = {}  # Dictionary to track created resources
 
@@ -88,12 +89,14 @@ def create_security_group(vpc_id):
         resources["security_group_id"] = sg_id
         print(f"Security group created with ID: {sg_id}")
 
+        # Add inbound rules
         ec2_client.authorize_security_group_ingress(
             GroupId=sg_id,
             IpPermissions=[
                 {"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
                 {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
                 {"IpProtocol": "udp", "FromPort": 1194, "ToPort": 1194, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
+                {"IpProtocol": "tcp", "FromPort": 943, "ToPort": 943, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]},
             ],
         )
         print("Inbound rules added.")
@@ -116,7 +119,7 @@ def create_key_pair(key_name):
             try:
                 response = ec2_client.create_key_pair(KeyName=key_name)
                 private_key = response['KeyMaterial']
-                pem_file = f"{key_name}.pem"
+                pem_file = os.path.join(os.getcwd(), f"{key_name}.pem")
                 with open(pem_file, "w") as file:
                     file.write(private_key)
                 os.chmod(pem_file, 0o400)
@@ -129,6 +132,9 @@ def create_key_pair(key_name):
         else:
             print(f"Error checking key pair '{key_name}': {e}")
             return None
+
+
+
 
 def launch_ec2_instance(key_name, sg_id, subnet_id):
     """Launches an EC2 instance."""
@@ -167,12 +173,126 @@ def allocate_elastic_ip(instance_id):
     except Exception as e:
         print(f"Error allocating Elastic IP: {e}")
 
+def create_lambda_role():
+    """Creates or reuses an IAM role for the Lambda function."""
+    print("Creating IAM Role for Lambda...")
+    role_name = "LambdaStopInstanceRole"
+    assume_role_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"Service": "lambda.amazonaws.com"},
+                "Action": "sts:AssumeRole"
+            }
+        ]
+    }
+    try:
+        # Check if the role already exists
+        response = iam_client.get_role(RoleName=role_name)
+        role_arn = response['Role']['Arn']
+        print(f"IAM Role {role_name} already exists. Reusing it.")
+        return role_arn
+    except iam_client.exceptions.NoSuchEntityException:
+        print(f"IAM Role {role_name} does not exist. Creating it...")
+        try:
+            response = iam_client.create_role(
+                RoleName=role_name,
+                AssumeRolePolicyDocument=json.dumps(assume_role_policy)
+            )
+            role_arn = response["Role"]["Arn"]
+
+            # Attach policies for Lambda execution and EC2 stop
+            iam_client.attach_role_policy(
+                RoleName=role_name,
+                PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+            )
+            iam_client.attach_role_policy(
+                RoleName=role_name,
+                PolicyArn="arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+            )
+
+            print(f"IAM Role {role_name} created successfully. Waiting for propagation...")
+            time.sleep(15)  # Wait for the role to propagate
+            return role_arn
+        except Exception as e:
+            print(f"Error creating IAM Role: {e}")
+            return None
+    except Exception as e:
+        print(f"Error checking IAM Role: {e}")
+        return None
+
+def create_lambda_function(instance_id, role_arn):
+    """Creates the Lambda function to stop the EC2 instance."""
+    print("Creating Lambda Function...")
+    function_name = "StopEC2Instance"
+    lambda_file = "lambda_function.zip"
+    with open("lambda_function.py", "w") as file:
+        file.write(f"""
+import boto3
+
+def lambda_handler(event, context):
+    ec2 = boto3.client('ec2')
+    ec2.stop_instances(InstanceIds=['{instance_id}'])
+    print("Stopped instance: {instance_id}")
+        """)
+    with zipfile.ZipFile(lambda_file, 'w') as zip_file:
+        zip_file.write("lambda_function.py")
+    os.remove("lambda_function.py")
+
+    try:
+        with open(lambda_file, "rb") as file:
+            zipped_code = file.read()
+        response = lambda_client.create_function(
+            FunctionName=function_name,
+            Runtime="python3.9",
+            Role=role_arn,
+            Handler="lambda_function.lambda_handler",
+            Code={"ZipFile": zipped_code},
+            Timeout=10
+        )
+        resources["lambda_function_name"] = function_name
+        print(f"Lambda Function {function_name} created successfully.")
+        return response["FunctionArn"]
+    except Exception as e:
+        print(f"Error creating Lambda Function: {e}")
+        return None
+
+def create_cloudwatch_alarm(instance_id, function_arn):
+    """Creates a CloudWatch alarm to trigger the Lambda function."""
+    print("Creating CloudWatch Alarm...")
+    try:
+        # Monitoring for 1-hour periods (3600 seconds)
+        # Assuming ~730 hours in a month, calculate threshold for hourly usage
+        hourly_threshold = 107374182400 / 730  # ~100GB divided by hours in a month
+
+        cloudwatch_client.put_metric_alarm(
+            AlarmName="VPNNetworkUsageAlarm",
+            MetricName="NetworkOut",
+            Namespace="AWS/EC2",
+            Statistic="Sum",
+            Period=3600,  # 1 hour
+            EvaluationPeriods=24,  # 1 day (maximum allowed evaluation window)
+            Threshold=hourly_threshold,  # Adjusted threshold for hourly usage
+            ComparisonOperator="GreaterThanThreshold",
+            AlarmActions=[function_arn],
+            Dimensions=[{"Name": "InstanceId", "Value": instance_id}]
+        )
+        resources["cloudwatch_alarm_name"] = "VPNNetworkUsageAlarm"
+        print("CloudWatch Alarm created successfully.")
+    except Exception as e:
+        print(f"Error creating CloudWatch Alarm: {e}")
+
+
 def main():
     print("Starting script...")
     try:
-        global ec2_client
+        global ec2_client, iam_client, lambda_client, cloudwatch_client
         region = input("Enter the AWS region (e.g., eu-west-2): ").strip()
         ec2_client = boto3.client("ec2", region_name=region)
+        iam_client = boto3.client("iam", region_name=region)
+        lambda_client = boto3.client("lambda", region_name=region)
+        cloudwatch_client = boto3.client("cloudwatch", region_name=region)
 
         vpcs = list_vpcs()
         vpc_choice = input("Do you want to select an existing VPC? (yes/no): ").strip().lower()
@@ -203,11 +323,30 @@ def main():
 
         allocate_elastic_ip(instance_id)
 
-        # Save resources to a JSON file
+        role_arn = create_lambda_role()
+        if not role_arn:
+            print("Failed to create IAM Role. Exiting.")
+            return
+
+        function_arn = create_lambda_function(instance_id, role_arn)
+        if not function_arn:
+            print("Failed to create Lambda Function. Exiting.")
+            return
+
+        create_cloudwatch_alarm(instance_id, function_arn)
+
         save_resources_to_file()
         print("Setup completed successfully!")
     except Exception as e:
         print(f"An error occurred: {e}")
+
+def ssh_into_instance(pem_file, elastic_ip):
+    """Uses the created .pem file to SSH into the EC2 instance."""
+    print(f"Attempting to SSH into instance at {elastic_ip} using key '{pem_file}'...")
+    ssh_command = f"ssh -i \"{pem_file}\" root@{elastic_ip}"
+    print("\nRun the following command in your terminal to SSH into the instance:\n")
+    print(ssh_command)
+
 
 if __name__ == "__main__":
     main()
