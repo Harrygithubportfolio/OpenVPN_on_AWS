@@ -16,7 +16,7 @@ def save_resources_to_file(filename="resources.json"):
         print(f"Error saving resources to file: {e}")
 
 def list_vpcs():
-    """Lists all VPCs."""
+    """Lists all VPCs along with their subnets."""
     print("Fetching VPCs...")
     response = ec2_client.describe_vpcs()
     vpcs = response['Vpcs']
@@ -33,7 +33,24 @@ def list_vpcs():
         print(f"   CIDR Block: {cidr}")
         print(f"   Default VPC: {is_default}")
         print(f"   Tags: {tag_info}")
+        print("   Subnets:")
+        list_subnets(vpc_id)  # Call the function to list subnets for this VPC
     return vpcs
+
+def list_subnets(vpc_id):
+    """Lists all subnets in a given VPC."""
+    try:
+        response = ec2_client.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+        subnets = response['Subnets']
+        for subnet in subnets:
+            subnet_id = subnet['SubnetId']
+            cidr = subnet['CidrBlock']
+            az = subnet['AvailabilityZone']
+            is_public = subnet['MapPublicIpOnLaunch']
+            print(f"      - Subnet ID: {subnet_id}, CIDR Block: {cidr}, Availability Zone: {az}, Public: {is_public}")
+    except Exception as e:
+        print(f"Error listing subnets for VPC {vpc_id}: {e}")
+
 
 def create_vpc():
     """Creates a new VPC with associated subnets, internet gateway, and route table."""
@@ -76,16 +93,33 @@ def create_vpc():
         print(f"Error creating VPC: {e}")
         return None, None
 
+
 def create_security_group(vpc_id):
-    """Creates a security group."""
-    print("Creating security group...")
+    """Checks if a security group exists and creates it if not."""
+    group_name = "OpenVPN-Security-Group"
+    print(f"Checking if security group '{group_name}' exists...")
+    try:
+        response = ec2_client.describe_security_groups(
+            Filters=[
+                {"Name": "group-name", "Values": [group_name]},
+                {"Name": "vpc-id", "Values": [vpc_id]},
+            ]
+        )
+        if response["SecurityGroups"]:
+            sg_id = response["SecurityGroups"][0]["GroupId"]
+            print(f"Security group '{group_name}' already exists with ID: {sg_id}. Using it.")
+            return sg_id
+    except Exception as e:
+        print(f"Error checking security group: {e}")
+
+    print(f"Security group '{group_name}' does not exist. Creating it...")
     try:
         response = ec2_client.create_security_group(
-            GroupName="OpenVPN-Security-Group",
+            GroupName=group_name,
             Description="Security group for OpenVPN server",
             VpcId=vpc_id
         )
-        sg_id = response['GroupId']
+        sg_id = response["GroupId"]
         resources["security_group_id"] = sg_id
         print(f"Security group created with ID: {sg_id}")
 
@@ -104,6 +138,7 @@ def create_security_group(vpc_id):
     except Exception as e:
         print(f"Error creating security group: {e}")
         return None
+
 
 def create_key_pair(key_name):
     """Checks if the key pair exists, and creates it if not."""
@@ -289,6 +324,7 @@ def main():
     try:
         global ec2_client, iam_client, lambda_client, cloudwatch_client
         region = input("Enter the AWS region (e.g., eu-west-2): ").strip()
+        resources["region"] = region  # Save the specified region to the resources dictionary
         ec2_client = boto3.client("ec2", region_name=region)
         iam_client = boto3.client("iam", region_name=region)
         lambda_client = boto3.client("lambda", region_name=region)
@@ -336,9 +372,14 @@ def main():
         create_cloudwatch_alarm(instance_id, function_arn)
 
         save_resources_to_file()
+
+        # Print SSH login instructions
+        print_ssh_instructions()
+
         print("Setup completed successfully!")
     except Exception as e:
         print(f"An error occurred: {e}")
+
 
 def ssh_into_instance(pem_file, elastic_ip):
     """Uses the created .pem file to SSH into the EC2 instance."""
@@ -346,6 +387,34 @@ def ssh_into_instance(pem_file, elastic_ip):
     ssh_command = f"ssh -i \"{pem_file}\" root@{elastic_ip}"
     print("\nRun the following command in your terminal to SSH into the instance:\n")
     print(ssh_command)
+
+
+
+def print_ssh_instructions():
+    """Print SSH instructions based on the existing resources."""
+    try:
+        # Load the resources from the JSON file
+        with open("resources.json", "r") as file:
+            resources = json.load(file)
+        
+        # Extract the Elastic IP and key pair name from resources
+        elastic_ip = resources.get("elastic_ip")
+        key_name = resources.get("key_pair_name")
+        pem_file = os.path.abspath(f"{key_name}.pem") if key_name else None  # Get absolute path for clarity
+
+        # Print the SSH command if both Elastic IP and key name exist
+        if elastic_ip and pem_file:
+            print("\nSSH Instructions:")
+            print("To connect to your OpenVPN instance, run the following command:\n")
+            print(f"ssh -i \"{pem_file}\" openvpnas@{elastic_ip}")
+            print("\nEnsure your .pem file has the correct permissions (chmod 400) before running the command.")
+        else:
+            print("Elastic IP or Key Pair information is missing. Please check the resources.json file.")
+    except FileNotFoundError:
+        print("resources.json file not found. Ensure the VPN create script has been run successfully.")
+    except Exception as e:
+        print(f"An error occurred while printing SSH instructions: {e}")
+
 
 
 if __name__ == "__main__":
