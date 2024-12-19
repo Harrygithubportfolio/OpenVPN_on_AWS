@@ -3,11 +3,11 @@
 Deploy a completely free OpenVPN server on AWS with automated setup, designed to cut off after 100GB of usage for cost control.
 
 
-# Instructions for Deploying the OpenVPN Script on AWS
+## Instructions for Deploying the OpenVPN Script on AWS
 
-## Follow these steps to deploy the script and set up a free OpenVPN server on AWS:
+### Follow these steps to deploy the script and set up a free OpenVPN server on AWS:
 
-### Prerequisites
+#### Prerequisites
 AWS Account: Ensure you have an active AWS account.
 
 IAM User with Admin Access: Create an IAM user with administrative permissions, or use an existing one.
