@@ -1,8 +1,6 @@
-# OpenVPN on AWS
-
 # Free OpenVPN Service on AWS
 
-## Deploy a completely free OpenVPN server on AWS with automated setup, designed to cut off after 100GB of usage for cost control.
+Deploy a completely free OpenVPN server on AWS with automated setup, designed to cut off after 100GB of usage for cost control.
 
 
 # Instructions for Deploying the OpenVPN Script on AWS
