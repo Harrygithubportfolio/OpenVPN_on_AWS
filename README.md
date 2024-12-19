@@ -80,7 +80,7 @@ Copy code
 python3 cleanup_openvpn.py
 Verify that all resources (VPC, EC2 instance, Elastic IP, etc.) have been deleted from your AWS account.
 
-##Disclaimer
+## Disclaimer
 
 This repository is provided as-is, and the scripts included are intended for educational and informational purposes only. By using this repository, you acknowledge and agree to the following:
 
