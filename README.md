@@ -32,51 +32,48 @@ cd OpenVPN_AWS
 
 ### Install Required Python Libraries: Use pip to install the necessary dependencies:
 
-bash
-Copy code
-pip install -r requirements.txt
+'pip install -r requirements.txt'
+
+
 Configure the Script:
 
-Open the config.json file in your editor.
-Update the following details:
-Region: The AWS region where you want to deploy the server.
-Instance Type: The EC2 instance type (e.g., t2.micro).
-Key Pair Name: Your SSH key pair name for EC2 access.
-Save the changes.
 Run the Script: Execute the Python script to deploy the resources:
 
-bash
-Copy code
+
 python3 deploy_openvpn.py
+
 Wait for Deployment to Complete:
 
-The script will create a VPC, subnets, security groups, an EC2 instance, and assign an Elastic IP.
+The script will create a VPC, subnets, security groups, an EC2 instance, and assign an Elastic IP. It will also create lambda functions to turn the instance off at 100GB per month. However it has been configured differently. The alarm evaluates the metric in 1-hour intervals (Period = 3600 seconds).
+It triggers if the hourly data consistently exceeds the threshold over a 24-hour evaluation period.
+
 Upon completion, it will output:
 Public IP address of the OpenVPN server.
 Connection credentials and configuration files.
 Download OpenVPN Configuration File:
 
 Access the server via SSH to retrieve the .ovpn configuration file.
-Use the command:
-bash
-Copy code
-scp -i /path/to/your/private-key.pem ec2-user@<Server-IP>:/home/ec2-user/<config-file>.ovpn ./local-directory
-Import and Connect:
 
-Import the .ovpn file into your OpenVPN client (e.g., OpenVPN GUI or Tunnelblick).
-Connect to the VPN using the credentials.
+Use the command:
+
+'scp -i /path/to/your/private-key.pem ec2-user@<Server-IP>:/home/ec2-user/<config-file>.ovpn ./local-directory'
+
+Follow the instructions after logging into the instance to correctly configure the openvpn server to your requirements. 
+
+You will then need to log in to the admin panel and get an activation code. Then you will need to log in to the openvpn portal and get the .ovpn file to import into your client.
+
 Usage Notes
+
 Free Tier Limitations: The VPN server is free to run under AWS Free Tier limits and cuts off after 100GB of combined data transfer (ingress and egress).
+
 Stopping the Server: To stop incurring charges, manually stop the EC2 instance from the AWS Management Console or CLI:
-bash
-Copy code
-aws ec2 stop-instances --instance-ids <instance-id>
+
 Clean-Up (Optional)
 To delete all resources created by the script:
 
 Run the clean-up script:
-bash
-Copy code
+
+
 python3 cleanup_openvpn.py
 Verify that all resources (VPC, EC2 instance, Elastic IP, etc.) have been deleted from your AWS account.
 
