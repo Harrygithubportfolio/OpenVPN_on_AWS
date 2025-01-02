@@ -1,5 +1,19 @@
 import boto3
+import os
 import json
+
+
+def delete_resources_file(file_path="resources.json"):
+    """Deletes the resources.json file if it exists."""
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"'{file_path}' has been deleted.")
+        else:
+            print(f"'{file_path}' does not exist or has already been deleted.")
+    except Exception as e:
+        print(f"Error deleting '{file_path}': {e}")
+
 
 def load_resources_from_file(filename="resources.json"):
     """Loads the resources from a JSON file."""
@@ -15,6 +29,7 @@ def load_resources_from_file(filename="resources.json"):
         print(f"Error loading resources from file: {e}")
         return {}
 
+
 def safe_execute(action, resource_name, resource_id, error_message):
     """Executes an action safely with error handling."""
     try:
@@ -22,6 +37,7 @@ def safe_execute(action, resource_name, resource_id, error_message):
         print(f"{resource_name} {resource_id} deleted successfully.")
     except Exception as e:
         print(f"Error {error_message} {resource_name} {resource_id}: {e}")
+
 
 def delete_cloudwatch_alarm(alarm_name):
     """Deletes a CloudWatch alarm."""
@@ -33,6 +49,7 @@ def delete_cloudwatch_alarm(alarm_name):
         "deleting"
     )
 
+
 def delete_lambda_function(function_name):
     """Deletes a Lambda function."""
     print(f"Deleting Lambda Function: {function_name}...")
@@ -42,6 +59,7 @@ def delete_lambda_function(function_name):
         function_name,
         "deleting"
     )
+
 
 def terminate_ec2_instance(instance_id):
     """Terminates an EC2 instance."""
@@ -54,6 +72,7 @@ def terminate_ec2_instance(instance_id):
     except Exception as e:
         print(f"Error terminating EC2 Instance {instance_id}: {e}")
 
+
 def release_elastic_ip(public_ip):
     """Releases an Elastic IP."""
     print(f"Releasing Elastic IP: {public_ip}...")
@@ -63,6 +82,7 @@ def release_elastic_ip(public_ip):
         print(f"Elastic IP {public_ip} released.")
     except Exception as e:
         print(f"Error releasing Elastic IP {public_ip}: {e}")
+
 
 def delete_security_group(sg_id):
     """Deletes a security group."""
@@ -74,6 +94,7 @@ def delete_security_group(sg_id):
         "deleting"
     )
 
+
 def detach_and_delete_internet_gateway(igw_id, vpc_id):
     """Detaches and deletes an Internet Gateway."""
     print(f"Detaching and deleting Internet Gateway: {igw_id}...")
@@ -83,6 +104,7 @@ def detach_and_delete_internet_gateway(igw_id, vpc_id):
         print(f"Internet Gateway {igw_id} deleted.")
     except Exception as e:
         print(f"Error deleting Internet Gateway {igw_id}: {e}")
+
 
 def delete_subnet(subnet_id):
     """Deletes a subnet."""
@@ -94,6 +116,7 @@ def delete_subnet(subnet_id):
         "deleting"
     )
 
+
 def delete_route_table(route_table_id):
     """Deletes a route table."""
     print(f"Deleting Route Table: {route_table_id}...")
@@ -104,6 +127,7 @@ def delete_route_table(route_table_id):
         "deleting"
     )
 
+
 def delete_vpc(vpc_id):
     """Deletes a VPC."""
     print(f"Deleting VPC: {vpc_id}...")
@@ -113,6 +137,7 @@ def delete_vpc(vpc_id):
         vpc_id,
         "deleting"
     )
+
 
 def main():
     print("Deleting resources from AWS...")
@@ -167,6 +192,12 @@ def main():
         print("All resources deleted successfully.")
     except Exception as e:
         print(f"An error occurred during cleanup: {e}")
+    finally:
+        # Delete the resources.json file
+        delete_resources_file()
+
 
 if __name__ == "__main__":
     main()
+    delete_resources_file()  # Ensure file cleanup happens
+

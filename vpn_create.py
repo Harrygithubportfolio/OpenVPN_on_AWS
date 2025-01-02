@@ -157,7 +157,14 @@ def create_key_pair(key_name):
                 pem_file = os.path.join(os.getcwd(), f"{key_name}.pem")
                 with open(pem_file, "w") as file:
                     file.write(private_key)
-                os.chmod(pem_file, 0o400)
+
+                # Set permissions to 600 for the PEM file
+                try:
+                    os.chmod(pem_file, 0o600)
+                    print(f"Set permissions to 600 for '{pem_file}'.")
+                except Exception as chmod_error:
+                    print(f"Error setting permissions for '{pem_file}': {chmod_error}")
+
                 resources["key_pair_name"] = key_name
                 print(f"Key pair '{key_name}' created and saved to '{pem_file}'.")
                 return key_name
@@ -168,6 +175,56 @@ def create_key_pair(key_name):
             print(f"Error checking key pair '{key_name}': {e}")
             return None
 
+
+def ensure_iam_role_permissions(role_name):
+    """Ensures the IAM role has the necessary permissions."""
+    print(f"Ensuring correct permissions for IAM role: {role_name}...")
+    
+    try:
+        # Define required managed policies
+        required_policies = [
+            "arn:aws:iam::aws:policy/CloudWatchFullAccess",
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ]
+        
+        # Check existing attached policies
+        attached_policies = iam_client.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]
+        attached_policy_arns = [policy["PolicyArn"] for policy in attached_policies]
+
+        # Attach missing policies
+        for policy_arn in required_policies:
+            if policy_arn not in attached_policy_arns:
+                print(f"Attaching policy: {policy_arn}")
+                iam_client.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
+        
+        # Create and attach a custom inline policy for EC2 permissions
+        custom_policy_name = "CustomEC2Permissions"
+        custom_policy_document = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:StopInstances",
+                        "ec2:DescribeInstances",
+                        "ec2:TerminateInstances",
+                        "ec2:ReleaseAddress",
+                        "ec2:DescribeAddresses"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+        
+        print(f"Attaching custom inline policy: {custom_policy_name}")
+        iam_client.put_role_policy(
+            RoleName=role_name,
+            PolicyName=custom_policy_name,
+            PolicyDocument=json.dumps(custom_policy_document)
+        )
+        print(f"Permissions for IAM role '{role_name}' updated successfully.")
+    except Exception as e:
+        print(f"Error ensuring permissions for IAM role '{role_name}': {e}")
 
 
 
@@ -257,6 +314,53 @@ def create_lambda_role():
         print(f"Error checking IAM Role: {e}")
         return None
 
+    # Attach managed policies
+    try:
+        required_policies = [
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            "arn:aws:iam::aws:policy/CloudWatchFullAccess"
+        ]
+        attached_policies = iam_client.list_attached_role_policies(RoleName=role_name)["AttachedPolicies"]
+        attached_policy_arns = [policy["PolicyArn"] for policy in attached_policies]
+
+        for policy_arn in required_policies:
+            if policy_arn not in attached_policy_arns:
+                print(f"Attaching policy: {policy_arn}")
+                iam_client.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
+
+        # Attach custom inline policy for EC2 actions
+        custom_policy_name = "CustomEC2Permissions"
+        custom_policy_document = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:StopInstances",
+                        "ec2:DescribeInstances",
+                        "ec2:TerminateInstances",
+                        "ec2:ReleaseAddress",
+                        "ec2:DescribeAddresses"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+        print(f"Attaching custom inline policy: {custom_policy_name}")
+        iam_client.put_role_policy(
+            RoleName=role_name,
+            PolicyName=custom_policy_name,
+            PolicyDocument=json.dumps(custom_policy_document)
+        )
+
+        print(f"Permissions for IAM role '{role_name}' updated successfully.")
+    except Exception as e:
+        print(f"Error attaching policies to IAM Role '{role_name}': {e}")
+        return None
+
+    return role_arn
+
+
 def create_lambda_function(instance_id, role_arn):
     """Creates the Lambda function to stop the EC2 instance."""
     print("Creating Lambda Function...")
@@ -294,29 +398,36 @@ def lambda_handler(event, context):
         return None
 
 def create_cloudwatch_alarm(instance_id, function_arn):
-    """Creates a CloudWatch alarm to trigger the Lambda function."""
-    print("Creating CloudWatch Alarm...")
+    """Creates a CloudWatch alarm to monitor monthly data usage."""
+    print("Creating CloudWatch Alarm for monthly data usage...")
     try:
-        # Monitoring for 1-hour periods (3600 seconds)
-        # Assuming ~730 hours in a month, calculate threshold for hourly usage
-        hourly_threshold = 107374182400 / 730  # ~100GB divided by hours in a month
-
+        # Define the monthly threshold split into an hourly approximation
+        hourly_threshold = 107374182400 / (30 * 24)  # ~99.6 GB split into 30 days and 24 hours/day
+        
         cloudwatch_client.put_metric_alarm(
-            AlarmName="VPNNetworkUsageAlarm",
+            AlarmName="MonthlyDataUsageAlarm",
+            AlarmDescription="Alarm to monitor combined NetworkIn and NetworkOut for ~99.6 GB of usage.",
+            ActionsEnabled=True,
+            AlarmActions=[function_arn],
             MetricName="NetworkOut",
             Namespace="AWS/EC2",
             Statistic="Sum",
             Period=3600,  # 1 hour
-            EvaluationPeriods=24,  # 1 day (maximum allowed evaluation window)
-            Threshold=hourly_threshold,  # Adjusted threshold for hourly usage
+            EvaluationPeriods=24,  # Monitor for 24 hours (1 day equivalent)
+            Threshold=hourly_threshold,
             ComparisonOperator="GreaterThanThreshold",
-            AlarmActions=[function_arn],
-            Dimensions=[{"Name": "InstanceId", "Value": instance_id}]
+            Dimensions=[
+                {"Name": "InstanceId", "Value": instance_id}
+            ],
+            TreatMissingData="notBreaching"
         )
         resources["cloudwatch_alarm_name"] = "VPNNetworkUsageAlarm"
         print("CloudWatch Alarm created successfully.")
     except Exception as e:
         print(f"Error creating CloudWatch Alarm: {e}")
+
+
+
 
 
 def main():
